@@ -1,0 +1,17 @@
+name: btinspect2
+on:
+  workflow_dispatch:
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          git clone --depth 1 https://github.com/Existencetoglow/BenchTasksCollv3.git /tmp/bt
+          echo README
+          cat /tmp/bt/README.md
+          echo FRAMEWORK
+          cat /tmp/bt/framework_overview.md
+          echo MAINPY
+          sed -n '1,250p' /tmp/bt/main.py
+          echo DIRS
+          find /tmp/bt/global_preparation /tmp/bt/deployment /tmp/bt/scripts /tmp/bt/utils -maxdepth 2 -type f | head -200
