@@ -1,0 +1,8 @@
+name: btclone
+on:
+  workflow_dispatch:
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: git clone --depth 1 https://github.com/Existencetoglow/BenchTasksCollv3.git /tmp/bt && ls -la /tmp/bt
