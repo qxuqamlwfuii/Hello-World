@@ -1,0 +1,20 @@
+name: btinspect3
+on:
+  workflow_dispatch:
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          git clone --depth 1 https://github.com/Existencetoglow/BenchTasksCollv3.git /tmp/bt
+          echo README
+          head -80 /tmp/bt/README.md
+          echo FRAMEWORK
+          cat /tmp/bt/framework_overview.md
+          echo GLOBALPREP
+          find /tmp/bt/global_preparation -type f | head -50
+          echo DEPLOY
+          find /tmp/bt/deployment -type f | head -50
+          echo LUFFY
+          git clone --depth 1 https://github.com/Existencetoglow/LUFFY.git /tmp/luffy || true
+          find /tmp/luffy -maxdepth 2 -type f | head -100
