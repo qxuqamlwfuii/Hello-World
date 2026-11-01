@@ -1,0 +1,77 @@
+name: yt-fetch
+on:
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Fetch YouTube playlist and video descriptions
+        run: |
+          python3 - << 'PYEOF'
+          import json, re, urllib.request
+
+          PLAYLIST = "PLyzTA8cetPdHtlGw1X8Kt7Ea4bd27ApR7"
+          HEADERS = {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+              "Accept-Language": "en-US,en;q=0.9",
+              "Cookie": "CONSENT=YES+cb.20210328-17-p0.en+FX+917",
+          }
+
+          def get(url):
+              req = urllib.request.Request(url, headers=HEADERS)
+              return urllib.request.urlopen(req, timeout=60).read().decode("utf-8", "ignore")
+
+          html = get("https://www.youtube.com/playlist?list=" + PLAYLIST + "&hl=en")
+          print("PAGE_LENGTH:", len(html))
+
+          m = re.search(r"var ytInitialData = (\{.*?\});</script>", html)
+          if not m:
+              m = re.search(r'ytInitialData"\]\s*=\s*(\{.*?\});', html)
+          print("FOUND_DATA:", bool(m))
+
+          if m:
+              data = json.loads(m.group(1))
+              videos = []
+
+              def walk(o):
+                  if isinstance(o, dict):
+                      if "playlistVideoRenderer" in o:
+                          v = o["playlistVideoRenderer"]
+                          title = "".join(r.get("text", "") for r in v.get("title", {}).get("runs", []))
+                          vid = v.get("videoId")
+                          idx = v.get("index", {}).get("simpleText", "")
+                          videos.append((idx, vid, title))
+                      for val in o.values():
+                          walk(val)
+                  elif isinstance(o, list):
+                      for val in o:
+                          walk(val)
+
+              walk(data)
+              print("VIDEO_COUNT:", len(videos))
+              seen = set()
+              for idx, vid, title in videos:
+                  if not vid or vid in seen:
+                      continue
+                  seen.add(vid)
+                  print("VIDEO\t%s\t%s\t%s" % (idx, vid, title))
+                  try:
+                      whtml = get("https://www.youtube.com/watch?v=" + vid + "&hl=en")
+                      pm = re.search(r"var ytInitialPlayerResponse = (\{.*?\});(?:var|</script>)", whtml)
+                      if not pm:
+                          pm = re.search(r'ytInitialPlayerResponse\s*=\s*(\{.*?\});', whtml)
+                      desc = ""
+                      if pm:
+                          try:
+                              pdata = json.loads(pm.group(1))
+                              desc = pdata.get("videoDetails", {}).get("shortDescription", "")
+                          except Exception as e:
+                              desc = "PARSE_ERR: %s" % e
+                      print("DESC_START\t" + vid)
+                      print(desc)
+                      print("DESC_END\t" + vid)
+                  except Exception as e:
+                      print("DESC_ERR\t%s\t%s" % (vid, e))
+          PYEOF
