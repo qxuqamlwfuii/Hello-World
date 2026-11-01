@@ -7,7 +7,50 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Fetch YouTube playlist and video descriptions
+      - name: YouTube Data API
+        run: |
+          python3 - << 'PYEOF'
+          import json, urllib.request
+
+          PLAYLIST = "PLyzTA8cetPdHtlGw1X8Kt7Ea4bd27ApR7"
+          KEY = "AIzaSyB7uygx81zztRt740fDOb_ZyfgyCCiyZNE"
+
+          def get(url):
+              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+              return urllib.request.urlopen(req, timeout=60).read().decode("utf-8", "ignore")
+
+          try:
+              u = "https://youtube.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails,status&id=%s&key=%s" % (PLAYLIST, KEY)
+              print("PLAYLIST_API_RESPONSE:")
+              print(get(u)[:5000])
+          except Exception as e:
+              print("PLAYLIST_API_ERR:", repr(e))
+              try:
+                  print(e.read().decode()[:2000])
+              except Exception:
+                  pass
+
+          try:
+              u = "https://youtube.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails,status&playlistId=%s&maxResults=50&key=%s" % (PLAYLIST, KEY)
+              data = json.loads(get(u))
+              print("ITEMS_TOTAL:", data.get("pageInfo", {}).get("totalResults"))
+              print("NEXT_PAGE:", data.get("nextPageToken"))
+              for it in data.get("items", []):
+                  s = it.get("snippet", {})
+                  vid = s.get("resourceId", {}).get("videoId", "")
+                  print("ITEM\t%s\t%s\t%s" % (s.get("position"), vid, s.get("title")))
+                  print("ITEM_DESC_START\t" + vid)
+                  print(s.get("description", ""))
+                  print("ITEM_DESC_END")
+          except Exception as e:
+              print("ITEMS_API_ERR:", repr(e))
+              try:
+                  print(e.read().decode()[:2000])
+              except Exception:
+                  pass
+          PYEOF
+
+      - name: HTML diagnostics
         run: |
           python3 - << 'PYEOF'
           import json, re, urllib.request
@@ -18,60 +61,52 @@ jobs:
               "Accept-Language": "en-US,en;q=0.9",
               "Cookie": "CONSENT=YES+cb.20210328-17-p0.en+FX+917",
           }
-
-          def get(url):
-              req = urllib.request.Request(url, headers=HEADERS)
-              return urllib.request.urlopen(req, timeout=60).read().decode("utf-8", "ignore")
-
-          html = get("https://www.youtube.com/playlist?list=" + PLAYLIST + "&hl=en")
-          print("PAGE_LENGTH:", len(html))
+          req = urllib.request.Request("https://www.youtube.com/playlist?list=" + PLAYLIST + "&hl=en", headers=HEADERS)
+          html = urllib.request.urlopen(req, timeout=60).read().decode("utf-8", "ignore")
+          print("HTML_LEN:", len(html))
+          for key in ["playlistVideoRenderer", "lockupViewModel", "playlistMetadataRenderer", "videoId", "ytInitialData"]:
+              print("COUNT_%s: %d" % (key, html.count(key)))
 
           m = re.search(r"var ytInitialData = (\{.*?\});</script>", html)
-          if not m:
-              m = re.search(r'ytInitialData"\]\s*=\s*(\{.*?\});', html)
-          print("FOUND_DATA:", bool(m))
-
+          print("FOUND_YTINITIALDATA:", bool(m))
           if m:
               data = json.loads(m.group(1))
-              videos = []
 
-              def walk(o):
+              def find_key(o, key, out, depth=0):
+                  if depth > 40:
+                      return
                   if isinstance(o, dict):
-                      if "playlistVideoRenderer" in o:
-                          v = o["playlistVideoRenderer"]
-                          title = "".join(r.get("text", "") for r in v.get("title", {}).get("runs", []))
-                          vid = v.get("videoId")
-                          idx = v.get("index", {}).get("simpleText", "")
-                          videos.append((idx, vid, title))
-                      for val in o.values():
-                          walk(val)
+                      for k, v in o.items():
+                          if k == key:
+                              out.append(v)
+                          find_key(v, key, out, depth + 1)
                   elif isinstance(o, list):
-                      for val in o:
-                          walk(val)
+                      for v in o:
+                          find_key(v, key, out, depth + 1)
 
-              walk(data)
-              print("VIDEO_COUNT:", len(videos))
-              seen = set()
-              for idx, vid, title in videos:
-                  if not vid or vid in seen:
-                      continue
-                  seen.add(vid)
-                  print("VIDEO\t%s\t%s\t%s" % (idx, vid, title))
+              metas = []
+              find_key(data, "playlistMetadataRenderer", metas)
+              for mt in metas[:3]:
+                  print("PLAYLIST_TITLE:", mt.get("title", ""))
+                  print("PLAYLIST_DESC:", (mt.get("description", "") or "")[:500])
+
+              lockups = []
+              find_key(data, "lockupViewModel", lockups)
+              print("LOCKUP_COUNT:", len(lockups))
+              for lv in lockups[:100]:
                   try:
-                      whtml = get("https://www.youtube.com/watch?v=" + vid + "&hl=en")
-                      pm = re.search(r"var ytInitialPlayerResponse = (\{.*?\});(?:var|</script>)", whtml)
-                      if not pm:
-                          pm = re.search(r'ytInitialPlayerResponse\s*=\s*(\{.*?\});', whtml)
-                      desc = ""
-                      if pm:
-                          try:
-                              pdata = json.loads(pm.group(1))
-                              desc = pdata.get("videoDetails", {}).get("shortDescription", "")
-                          except Exception as e:
-                              desc = "PARSE_ERR: %s" % e
-                      print("DESC_START\t" + vid)
-                      print(desc)
-                      print("DESC_END\t" + vid)
+                      meta = lv.get("metadata", {}).get("lockupMetadataViewModel", {})
+                      title = meta.get("title", {}).get("content", "")
+                      vid = lv.get("contentId", "")
+                      print("LOCKUP\t%s\t%s" % (vid, title))
                   except Exception as e:
-                      print("DESC_ERR\t%s\t%s" % (vid, e))
+                      print("LOCKUP_ERR", e)
+
+          ids = []
+          for vid in re.findall(r'"videoId":"([A-Za-z0-9_-]{11})"', html):
+              if vid not in ids:
+                  ids.append(vid)
+          print("REGEX_VIDEO_IDS:", ",".join(ids[:100]))
+          titles = re.findall(r'"title":\{"runs":\[\{"text":"([^"]{1,200})"\}\]', html)
+          print("REGEX_TITLES:", " | ".join(titles[:50]))
           PYEOF
