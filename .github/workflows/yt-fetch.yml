@@ -7,10 +7,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: YouTube Data API
+      - name: YouTube playlist compact summary
         run: |
           python3 - << 'PYEOF'
-          import json, urllib.request
+          import json, re, urllib.request
 
           PLAYLIST = "PLyzTA8cetPdHtlGw1X8Kt7Ea4bd27ApR7"
           KEY = "AIzaSyB7uygx81zztRt740fDOb_ZyfgyCCiyZNE"
@@ -19,94 +19,36 @@ jobs:
               req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
               return urllib.request.urlopen(req, timeout=60).read().decode("utf-8", "ignore")
 
-          try:
-              u = "https://youtube.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails,status&id=%s&key=%s" % (PLAYLIST, KEY)
-              print("PLAYLIST_API_RESPONSE:")
-              print(get(u)[:5000])
-          except Exception as e:
-              print("PLAYLIST_API_ERR:", repr(e))
-              try:
-                  print(e.read().decode()[:2000])
-              except Exception:
-                  pass
-
-          try:
+          items = []
+          token = None
+          while True:
               u = "https://youtube.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails,status&playlistId=%s&maxResults=50&key=%s" % (PLAYLIST, KEY)
+              if token:
+                  u += "&pageToken=" + urllib.parse.quote(token)
               data = json.loads(get(u))
-              print("ITEMS_TOTAL:", data.get("pageInfo", {}).get("totalResults"))
-              print("NEXT_PAGE:", data.get("nextPageToken"))
-              for it in data.get("items", []):
-                  s = it.get("snippet", {})
-                  vid = s.get("resourceId", {}).get("videoId", "")
-                  print("ITEM\t%s\t%s\t%s" % (s.get("position"), vid, s.get("title")))
-                  print("ITEM_DESC_START\t" + vid)
-                  print(s.get("description", ""))
-                  print("ITEM_DESC_END")
-          except Exception as e:
-              print("ITEMS_API_ERR:", repr(e))
-              try:
-                  print(e.read().decode()[:2000])
-              except Exception:
-                  pass
-          PYEOF
+              items.extend(data.get("items", []))
+              token = data.get("nextPageToken")
+              if not token:
+                  break
 
-      - name: HTML diagnostics
-        run: |
-          python3 - << 'PYEOF'
-          import json, re, urllib.request
-
-          PLAYLIST = "PLyzTA8cetPdHtlGw1X8Kt7Ea4bd27ApR7"
-          HEADERS = {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-              "Accept-Language": "en-US,en;q=0.9",
-              "Cookie": "CONSENT=YES+cb.20210328-17-p0.en+FX+917",
-          }
-          req = urllib.request.Request("https://www.youtube.com/playlist?list=" + PLAYLIST + "&hl=en", headers=HEADERS)
-          html = urllib.request.urlopen(req, timeout=60).read().decode("utf-8", "ignore")
-          print("HTML_LEN:", len(html))
-          for key in ["playlistVideoRenderer", "lockupViewModel", "playlistMetadataRenderer", "videoId", "ytInitialData"]:
-              print("COUNT_%s: %d" % (key, html.count(key)))
-
-          m = re.search(r"var ytInitialData = (\{.*?\});</script>", html)
-          print("FOUND_YTINITIALDATA:", bool(m))
-          if m:
-              data = json.loads(m.group(1))
-
-              def find_key(o, key, out, depth=0):
-                  if depth > 40:
-                      return
-                  if isinstance(o, dict):
-                      for k, v in o.items():
-                          if k == key:
-                              out.append(v)
-                          find_key(v, key, out, depth + 1)
-                  elif isinstance(o, list):
-                      for v in o:
-                          find_key(v, key, out, depth + 1)
-
-              metas = []
-              find_key(data, "playlistMetadataRenderer", metas)
-              for mt in metas[:3]:
-                  print("PLAYLIST_TITLE:", mt.get("title", ""))
-                  print("PLAYLIST_DESC:", (mt.get("description", "") or "")[:500])
-
-              lockups = []
-              find_key(data, "lockupViewModel", lockups)
-              print("LOCKUP_COUNT:", len(lockups))
-              for lv in lockups[:100]:
-                  try:
-                      meta = lv.get("metadata", {}).get("lockupMetadataViewModel", {})
-                      title = meta.get("title", {}).get("content", "")
-                      vid = lv.get("contentId", "")
-                      print("LOCKUP\t%s\t%s" % (vid, title))
-                  except Exception as e:
-                      print("LOCKUP_ERR", e)
-
-          ids = []
-          for vid in re.findall(r'"videoId":"([A-Za-z0-9_-]{11})"', html):
-              if vid not in ids:
-                  ids.append(vid)
-          print("REGEX_VIDEO_IDS:", ",".join(ids[:100]))
-          titles = re.findall(r'"title":\{"runs":\[\{"text":"([^"]{1,200})"\}\]', html)
-          print("REGEX_TITLES:", " | ".join(titles[:50]))
+          print("TOTAL_ITEMS:", len(items))
+          for it in items:
+              s = it.get("snippet", {})
+              pos = s.get("position")
+              vid = s.get("resourceId", {}).get("videoId", "")
+              title = s.get("title", "")
+              desc = s.get("description", "") or ""
+              urls = re.findall(r'https?://[^\s\)\]\>"\']+', desc)
+              gh = []
+              hf = []
+              for x in urls:
+                  x = x.rstrip(".,;")
+                  if "github.com" in x.lower() and x not in gh:
+                      gh.append(x)
+                  if "huggingface.co" in x.lower() and x not in hf:
+                      hf.append(x)
+              print("ITEM\t%s\t%s\t%s" % (pos, vid, title))
+              print("GH\t%s\t%s" % (pos, " | ".join(gh)))
+              print("HF\t%s\t%s" % (pos, " | ".join(hf)))
+              print("DESC\t%s\t%s" % (pos, re.sub(r"\s+", " ", desc)[:400]))
           PYEOF
