@@ -1,0 +1,8 @@
+name: clonetest
+on:
+  workflow_dispatch:
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: git clone --depth 1 https://github.com/octocat/Hello-World.git /tmp/hw && ls /tmp/hw
