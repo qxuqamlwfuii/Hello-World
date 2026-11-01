@@ -1,0 +1,15 @@
+name: btinspect
+on:
+  workflow_dispatch:
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          git clone --depth 1 https://github.com/Existencetoglow/BenchTasksCollv3.git /tmp/bt
+          echo FILES
+          find /tmp/bt/tasks -maxdepth 3 -type f | head -300
+          echo PLAYLISTMATCH
+          grep -R "PLyzTA8cetPdHtlGw1X8Kt7Ea4bd27ApR7" -n /tmp/bt/tasks | head -20 || true
+          echo MLTECHMATCH
+          grep -R "ml_tech" -n /tmp/bt/tasks | head -50 || true
