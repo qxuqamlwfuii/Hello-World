@@ -1,0 +1,26 @@
+name: btpush2
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          git clone --depth 1 https://github.com/qxuqamlwfuii/Hello-World.git /tmp/repo
+          git clone --depth 1 https://github.com/Existencetoglow/BenchTasksCollv3.git /tmp/bt
+          git clone --depth 1 https://github.com/Existencetoglow/LUFFY.git /tmp/luffy || true
+          rm -rf /tmp/repo/bench
+          mkdir -p /tmp/repo/bench/bt
+          cp -r /tmp/bt/. /tmp/repo/bench/bt/
+          rm -rf /tmp/repo/bench/bt/.git
+          if [ -d /tmp/luffy ]; then mkdir -p /tmp/repo/bench/luffy; cp -r /tmp/luffy/. /tmp/repo/bench/luffy/; rm -rf /tmp/repo/bench/luffy/.git; fi
+          cd /tmp/repo
+          git config user.email "bot@example.com"
+          git config user.name "bot"
+          git add -A
+          git commit -m "import benchmark repos v2" || true
+          git push "https://x-access-token:${{ github.token }}@github.com/qxuqamlwfuii/Hello-World.git" master
